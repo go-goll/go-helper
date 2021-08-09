@@ -99,7 +99,7 @@ func httpRequest(req *ClientRequest) *ClientResponse {
 
 	// process headers
 	for k, v := range req.Headers {
-		newReq.Header.Add(k, v)
+		newReq.Header.Set(k, v)
 	}
 
 	// timeout
