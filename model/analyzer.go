@@ -226,7 +226,7 @@ func parseCreateIndex(m *marker, params *commandParams) error {
 	for _, f := range indexFields {
 		f.indexs = append(f.indexs, idx)
 		// 更新字段的tag
-		if !strings.Contains(f.Tag, ";index:") {
+		if !strings.Contains(f.Tag, ";index:"+indexName) {
 			f.Tag += ";index:" + indexName
 		}
 	}
@@ -288,7 +288,7 @@ func parseCreateUniqueIndex(m *marker, params *commandParams) error {
 	for _, f := range indexFields {
 		f.indexs = append(f.indexs, idx)
 		// 更新字段的tag
-		if !strings.Contains(f.Tag, ";uniqueIndex:") {
+		if !strings.Contains(f.Tag, ";uniqueIndex:"+indexName) {
 			f.Tag += ";uniqueIndex:" + indexName
 		}
 	}
