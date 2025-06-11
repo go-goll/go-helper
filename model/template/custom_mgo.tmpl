@@ -1,0 +1,25 @@
+// Package {{.PkgName}} provides ...
+package {{.PkgName}}
+
+import (
+	"{{.Import}}"
+
+	"go.mongodb.org/mongo-driver/mongo"
+)
+
+// Obj{{.TableName}} data object
+type Obj{{.TableName}} = internal.{{.TableName}}Obj
+
+// New{{.TableName}} new instance
+func New{{.TableName}}(ormDB *mongo.Database) {{.TableName}} {
+	return {{.TableName}} {
+		internal.New{{.TableName}}Dao(ormDB),
+	}
+}
+
+// {{.TableName}} export function
+type {{.TableName}} struct {
+	internal.{{.TableName}}Dao
+}
+
+// NOTE Below you can custom your logic.

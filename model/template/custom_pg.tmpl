@@ -1,0 +1,25 @@
+// Package {{.PkgName}} provides ...
+package {{.PkgName}}
+
+import (
+	"{{.Import}}"
+
+	"gorm.io/gorm"
+)
+
+// Obj{{.TableName}} data object
+type Obj{{.TableName}} = internal.{{.TableName}}Obj
+
+// New{{.TableName}} new instance
+func New{{.TableName}}(ormDB *gorm.DB) {{.TableName}} {
+	return {{.TableName}} {
+		internal.New{{.TableName}}Dao(ormDB),
+	}
+}
+
+// {{.TableName}} export function
+type {{.TableName}} struct {
+	internal.{{.TableName}}Dao
+}
+
+// NOTE Below you can custom your logic.
