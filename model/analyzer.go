@@ -41,7 +41,7 @@ func ddlAnalyzer(raw []byte) (params *commandParams, err error) {
 	for _, v := range data {
 		ddl := string(v)
 		if ddl == "" {
-			return params, nil
+			continue
 		}
 		m := &marker{
 			linesDDL:  strSplitAndTrimSpace(ddl, "\n"),
@@ -49,10 +49,19 @@ func ddlAnalyzer(raw []byte) (params *commandParams, err error) {
 		}
 
 		line := m.nextLine()
+		if line == "" {
+			continue
+		}
 		fields := m.Fields(line)
 		switch strings.ToUpper(fields[0]) {
 		case "CREATE":
-			err = parseCreate(m, params)
+			if len(fields) > 1 && strings.ToUpper(fields[1]) == "INDEX" {
+				err = parseCreateIndex(m, params)
+			} else if len(fields) > 1 && strings.ToUpper(fields[1]) == "UNIQUE" {
+				err = parseCreateUniqueIndex(m, params)
+			} else {
+				err = parseCreate(m, params)
+			}
 		case "COMMENT":
 			err = parseComment(m, params)
 		case "ALTER":
@@ -93,7 +102,7 @@ func parseCreate(m *marker, params *commandParams) error {
 			if f.notNull {
 				f.Tag += ";not null"
 			}
-			// 计算idx
+			// 计算idx - 只处理从表结构中解析的索引
 			for _, idx := range f.indexs {
 				var idxStr string
 				for i, v := range idx.indexFields {
@@ -121,15 +130,16 @@ func parseCreate(m *marker, params *commandParams) error {
 			// change name
 			f.Name = strcase.ToCamel(f.Name)
 		}
+
 		// primary key
 		if params.Primary != nil {
 			rebuildTag(params.Primary.field)
-
 			params.Primary.Tag += ";primaryKey"
 			if params.Primary.Autoincrement {
 				params.Primary.Tag += ";autoIncrement"
 			}
 		}
+
 		// change content
 		for _, v := range params.Fields {
 			vt := strings.ToUpper(v.Type)
@@ -140,14 +150,12 @@ func parseCreate(m *marker, params *commandParams) error {
 				if v.Name == "deleted_at" {
 					v.Type = "gorm.DeletedAt"
 					ok = true
-
 					break
 				}
 				// 映射数据类型
 				if vt == key {
 					v.Type = val
 					ok = true
-
 					break
 				}
 			}
@@ -162,6 +170,130 @@ func parseCreate(m *marker, params *commandParams) error {
 		return nil
 	}
 	return errors.New("unsupported operation: CREATE " + fields[1])
+}
+
+// parseCreateIndex 解析 CREATE INDEX 语句
+func parseCreateIndex(m *marker, params *commandParams) error {
+	line := m.currentLine()
+	// CREATE INDEX index_name ON table_name (column1, column2, ...)
+
+	// 使用正则表达式解析索引语句
+	indexRegex := regexp.MustCompile(`CREATE\s+INDEX\s+(\w+)\s+ON\s+(\w+)\s*\(([^)]+)\)`)
+	matches := indexRegex.FindStringSubmatch(line)
+
+	if len(matches) != 4 {
+		return errors.New("invalid CREATE INDEX statement: " + line)
+	}
+
+	indexName := matches[1]
+	tableName := matches[2]
+	columnList := matches[3]
+
+	// 检查表名是否匹配
+	if params.TableName != "" && strings.ToLower(tableName) != strings.ToLower(strcase.ToSnake(params.TableName)) {
+		// 如果表名不匹配，可能是另一个表的索引，忽略
+		return nil
+	}
+
+	// 解析列名
+	columns := strSplitAndTrimSpace(columnList, ",")
+	var indexFields []*field
+
+	for _, col := range columns {
+		col = strings.TrimSpace(col)
+		// 查找对应的字段
+		for _, f := range params.Fields {
+			if strings.EqualFold(strcase.ToSnake(f.Name), col) {
+				indexFields = append(indexFields, f)
+				break
+			}
+		}
+	}
+
+	if len(indexFields) == 0 {
+		return nil // 没有找到对应的字段
+	}
+
+	// 创建索引信息
+	idx := index{
+		normalIndex: true,
+		uniqueIndex: false,
+		indexFields: indexFields,
+		indexName:   indexName,
+	}
+
+	// 将索引添加到相关字段
+	for _, f := range indexFields {
+		f.indexs = append(f.indexs, idx)
+		// 更新字段的tag
+		if !strings.Contains(f.Tag, ";index:") {
+			f.Tag += ";index:" + indexName
+		}
+	}
+
+	return nil
+}
+
+// parseCreateUniqueIndex 解析 CREATE UNIQUE INDEX 语句
+func parseCreateUniqueIndex(m *marker, params *commandParams) error {
+	line := m.currentLine()
+	// CREATE UNIQUE INDEX index_name ON table_name (column1, column2, ...)
+
+	// 使用正则表达式解析唯一索引语句
+	indexRegex := regexp.MustCompile(`CREATE\s+UNIQUE\s+INDEX\s+(\w+)\s+ON\s+(\w+)\s*\(([^)]+)\)`)
+	matches := indexRegex.FindStringSubmatch(line)
+
+	if len(matches) != 4 {
+		return errors.New("invalid CREATE UNIQUE INDEX statement: " + line)
+	}
+
+	indexName := matches[1]
+	tableName := matches[2]
+	columnList := matches[3]
+
+	// 检查表名是否匹配
+	if params.TableName != "" && strings.ToLower(tableName) != strings.ToLower(strcase.ToSnake(params.TableName)) {
+		// 如果表名不匹配，可能是另一个表的索引，忽略
+		return nil
+	}
+
+	// 解析列名
+	columns := strSplitAndTrimSpace(columnList, ",")
+	var indexFields []*field
+
+	for _, col := range columns {
+		col = strings.TrimSpace(col)
+		// 查找对应的字段
+		for _, f := range params.Fields {
+			if strings.EqualFold(strcase.ToSnake(f.Name), col) {
+				indexFields = append(indexFields, f)
+				break
+			}
+		}
+	}
+
+	if len(indexFields) == 0 {
+		return nil // 没有找到对应的字段
+	}
+
+	// 创建唯一索引信息
+	idx := index{
+		normalIndex: false,
+		uniqueIndex: true,
+		indexFields: indexFields,
+		indexName:   indexName,
+	}
+
+	// 将索引添加到相关字段
+	for _, f := range indexFields {
+		f.indexs = append(f.indexs, idx)
+		// 更新字段的tag
+		if !strings.Contains(f.Tag, ";uniqueIndex:") {
+			f.Tag += ";uniqueIndex:" + indexName
+		}
+	}
+
+	return nil
 }
 
 func parseComment(m *marker, params *commandParams) error {
@@ -223,49 +355,7 @@ func parseFields(m *marker, params *commandParams) error {
 					}
 				}
 			}
-
-		case "UNIQUE":
-			sub := regexpIndex.FindStringSubmatch(line)
-			for i, v := range sub {
-				if i == 0 {
-					continue
-				}
-				// unique
-				arr := strSplitAndTrimSpace(v, ",")
-				arrField := make([]*field, len(arr))
-				for i, vv := range arr {
-					idx := foundFiled(params.Fields, vv)
-					if idx >= 0 {
-						arrField[i] = params.Fields[idx]
-
-						params.Fields[idx].indexs = append(params.Fields[idx].indexs, index{
-							uniqueIndex: true,
-							indexFields: arrField,
-						})
-					}
-				}
-			}
-		case "INDEX":
-			sub := regexpIndex.FindStringSubmatch(line)
-			for i, v := range sub {
-				if i == 0 {
-					continue
-				}
-				// unique
-				arr := strSplitAndTrimSpace(v, ",")
-				arrField := make([]*field, len(arr))
-				for i, vv := range arr {
-					idx := foundFiled(params.Fields, vv)
-					if idx >= 0 {
-						arrField[i] = params.Fields[idx]
-
-						params.Fields[idx].indexs = append(params.Fields[idx].indexs, index{
-							normalIndex: true,
-							indexFields: arrField,
-						})
-					}
-				}
-			}
+		// 移除表内的 UNIQUE 和 INDEX 解析，这些现在通过 CREATE INDEX 语句处理
 		default: // 普通字段
 			field := &field{
 				Name: fields[0],

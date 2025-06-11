@@ -135,6 +135,7 @@ type index struct {
 	uniqueIndex bool
 	normalIndex bool
 	indexFields []*field
+	indexName   string
 }
 
 type primaryKey struct {

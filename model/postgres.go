@@ -74,136 +74,169 @@ func (pg *postgresGenerator) generateCustomFile(path string, params *commandPara
 
 func (pg *postgresGenerator) generateDeleteIndexDao(params *commandParams, buf *bytes.Buffer) {
 	added := make(map[string]bool)
+
+	// 收集所有唯一索引
+	uniqueIndexes := make(map[string]index)
 	for _, v := range params.Fields {
-		for _, v := range v.indexs {
-			var (
-				key, input string
-				w, q       string
-			)
-			for i, vv := range v.indexFields {
-				key += vv.Name
-
-				n := strcase.ToLowerCamel(vv.Name)
-				name := strcase.ToSnakeWithIgnore(vv.Name, "sha1")
-				if i == 0 {
-					input = n + " " + vv.Type
-					w = name + "=?"
-					q = n
-				} else {
-					input += ", " + n + " " + vv.Type
-					w += " AND " + name + "=?"
-					q += ", " + n
-				}
+		for _, idx := range v.indexs {
+			if idx.uniqueIndex && idx.indexName != "" {
+				uniqueIndexes[idx.indexName] = idx
 			}
-			if (!v.uniqueIndex && !v.normalIndex) || added[key] {
-				continue
-			}
-			added[key] = true
-
-			funcName := fmt.Sprintf("Delete%sBy%s", params.TableName, key)
-			// comments
-			buf.WriteString(fmt.Sprintf("// %s delete object\n", funcName))
-			// func
-			buf.WriteString(fmt.Sprintf("func (d %sDao) %s", params.TableName, funcName))
-			buf.WriteString(fmt.Sprintf("(%s)", input))
-			buf.WriteString(" error {\n")
-			// exp
-			buf.WriteString(fmt.Sprintf(`	return d.DB.Where("%s", %s)`, w, q))
-			buf.WriteString(fmt.Sprintf(".Delete(%sObj{}).Error\n", params.TableName))
-			// quote
-			buf.WriteString("}\n\n")
 		}
+	}
+
+	// 为每个唯一索引生成删除方法
+	for indexName, idx := range uniqueIndexes {
+		var (
+			key, input string
+			w, q       string
+		)
+		for i, vv := range idx.indexFields {
+			key += vv.Name
+
+			n := strcase.ToLowerCamel(vv.Name)
+			name := strcase.ToSnakeWithIgnore(vv.Name, "sha1")
+			if i == 0 {
+				input = n + " " + vv.Type
+				w = name + "=?"
+				q = n
+			} else {
+				input += ", " + n + " " + vv.Type
+				w += " AND " + name + "=?"
+				q += ", " + n
+			}
+		}
+
+		if added[key] {
+			continue
+		}
+		added[key] = true
+
+		funcName := fmt.Sprintf("Delete%sBy%s", params.TableName, key)
+		// comments
+		buf.WriteString(fmt.Sprintf("// %s delete object by unique index %s\n", funcName, indexName))
+		// func
+		buf.WriteString(fmt.Sprintf("func (d %sDao) %s", params.TableName, funcName))
+		buf.WriteString(fmt.Sprintf("(%s)", input))
+		buf.WriteString(" error {\n")
+		// exp
+		buf.WriteString(fmt.Sprintf(`	return d.DB.Where("%s", %s)`, w, q))
+		buf.WriteString(fmt.Sprintf(".Delete(%sObj{}).Error\n", params.TableName))
+		// quote
+		buf.WriteString("}\n\n")
 	}
 }
 
 func (pg *postgresGenerator) generateUpdateIndexDao(params *commandParams, buf *bytes.Buffer) {
 	added := make(map[string]bool)
+
+	// 收集所有唯一索引
+	uniqueIndexes := make(map[string]index)
 	for _, v := range params.Fields {
-		for _, v := range v.indexs {
-			var (
-				key, input string
-				w, q       string
-			)
-			for i, vv := range v.indexFields {
-				key += vv.Name
-				n := strcase.ToLowerCamel(vv.Name)
-				name := strcase.ToSnakeWithIgnore(vv.Name, "sha1")
-				if i == 0 {
-					input = n + " " + vv.Type
-					w = name + "=?"
-					q = n
-				} else {
-					input += ", " + n + " " + vv.Type
-					w += " AND " + name + "=?"
-					q += ", " + n
-				}
+		for _, idx := range v.indexs {
+			if idx.uniqueIndex && idx.indexName != "" {
+				uniqueIndexes[idx.indexName] = idx
 			}
-			if (!v.uniqueIndex && !v.normalIndex) || added[key] {
-				continue
-			}
-			added[key] = true
-
-			input += ", fields map[string]interface{}"
-
-			funcName := fmt.Sprintf("Update%sBy%s", params.TableName, key)
-			// comments
-			buf.WriteString(fmt.Sprintf("// %s update object\n", funcName))
-			// func
-			buf.WriteString(fmt.Sprintf("func (d %sDao) %s", params.TableName, funcName))
-			buf.WriteString(fmt.Sprintf("(%s)", input))
-			buf.WriteString(" error {\n")
-			// exp
-			buf.WriteString(fmt.Sprintf(`	return d.DB.Model(%sObj{}).Where("%s", %s)`,
-				params.TableName, w, q))
-			buf.WriteString(".Updates(fields).Error\n")
-			// quote
-			buf.WriteString("}\n\n")
 		}
+	}
+
+	// 为每个唯一索引生成更新方法
+	for indexName, idx := range uniqueIndexes {
+		var (
+			key, input string
+			w, q       string
+		)
+		for i, vv := range idx.indexFields {
+			key += vv.Name
+			n := strcase.ToLowerCamel(vv.Name)
+			name := strcase.ToSnakeWithIgnore(vv.Name, "sha1")
+			if i == 0 {
+				input = n + " " + vv.Type
+				w = name + "=?"
+				q = n
+			} else {
+				input += ", " + n + " " + vv.Type
+				w += " AND " + name + "=?"
+				q += ", " + n
+			}
+		}
+
+		if added[key] {
+			continue
+		}
+		added[key] = true
+
+		input += ", fields map[string]interface{}"
+
+		funcName := fmt.Sprintf("Update%sBy%s", params.TableName, key)
+		// comments
+		buf.WriteString(fmt.Sprintf("// %s update object by unique index %s\n", funcName, indexName))
+		// func
+		buf.WriteString(fmt.Sprintf("func (d %sDao) %s", params.TableName, funcName))
+		buf.WriteString(fmt.Sprintf("(%s)", input))
+		buf.WriteString(" error {\n")
+		// exp
+		buf.WriteString(fmt.Sprintf(`	return d.DB.Model(%sObj{}).Where("%s", %s)`,
+			params.TableName, w, q))
+		buf.WriteString(".Updates(fields).Error\n")
+		// quote
+		buf.WriteString("}\n\n")
 	}
 }
 
 func (pg *postgresGenerator) generateSelectIndexDao(params *commandParams, buf *bytes.Buffer) {
 	added := make(map[string]bool)
-	for _, v := range params.Fields {
-		for _, v := range v.indexs {
-			var (
-				key, input string
-				w, q       string
-			)
-			for i, vv := range v.indexFields {
-				key += vv.Name
-				n := strcase.ToLowerCamel(vv.Name)
-				name := strcase.ToSnakeWithIgnore(vv.Name, "sha1")
-				if i == 0 {
-					input = n + " " + vv.Type
-					w = name + "=?"
-					q = n
-				} else {
-					input += ", " + n + " " + vv.Type
-					w += " AND " + name + "=?"
-					q += ", " + n
-				}
-			}
-			if (!v.uniqueIndex && !v.normalIndex) || added[key] {
-				continue
-			}
-			added[key] = true
 
-			funcName := fmt.Sprintf("Select%sBy%s", params.TableName, key)
-			// comments
-			buf.WriteString(fmt.Sprintf("// %s select object\n", funcName))
-			// func
-			buf.WriteString(fmt.Sprintf("func (d %sDao) %s", params.TableName, funcName))
-			buf.WriteString(fmt.Sprintf("(%s)", input))
-			buf.WriteString(fmt.Sprintf(" (*%sObj, error) {\n", params.TableName))
-			// exp
-			buf.WriteString(fmt.Sprintf("	obj := new(%sObj)\n", params.TableName))
-			buf.WriteString(fmt.Sprintf(`	err := d.DB.Where("%s", %s)`, w, q))
-			buf.WriteString(".First(obj).Error\n")
-			buf.WriteString("	return obj, err\n")
-			// quote
-			buf.WriteString("}\n\n")
+	// 收集所有唯一索引
+	uniqueIndexes := make(map[string]index)
+	for _, v := range params.Fields {
+		for _, idx := range v.indexs {
+			if idx.uniqueIndex && idx.indexName != "" {
+				uniqueIndexes[idx.indexName] = idx
+			}
 		}
+	}
+
+	// 为每个唯一索引生成查询方法
+	for indexName, idx := range uniqueIndexes {
+		var (
+			key, input string
+			w, q       string
+		)
+		for i, vv := range idx.indexFields {
+			key += vv.Name
+			n := strcase.ToLowerCamel(vv.Name)
+			name := strcase.ToSnakeWithIgnore(vv.Name, "sha1")
+			if i == 0 {
+				input = n + " " + vv.Type
+				w = name + "=?"
+				q = n
+			} else {
+				input += ", " + n + " " + vv.Type
+				w += " AND " + name + "=?"
+				q += ", " + n
+			}
+		}
+
+		if added[key] {
+			continue
+		}
+		added[key] = true
+
+		funcName := fmt.Sprintf("Select%sBy%s", params.TableName, key)
+		// comments
+		buf.WriteString(fmt.Sprintf("// %s select object by unique index %s\n", funcName, indexName))
+		// func
+		buf.WriteString(fmt.Sprintf("func (d %sDao) %s", params.TableName, funcName))
+		buf.WriteString(fmt.Sprintf("(%s)", input))
+		buf.WriteString(fmt.Sprintf(" (*%sObj, error) {\n", params.TableName))
+		// exp
+		buf.WriteString(fmt.Sprintf("	obj := new(%sObj)\n", params.TableName))
+		buf.WriteString(fmt.Sprintf(`	err := d.DB.Where("%s", %s)`, w, q))
+		buf.WriteString(".First(obj).Error\n")
+		buf.WriteString("	return obj, err\n")
+		// quote
+		buf.WriteString("}\n\n")
 	}
 }
 
